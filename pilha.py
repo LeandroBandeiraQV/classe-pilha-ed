@@ -1,6 +1,3 @@
-from logging import config
-
-
 def soma(a,b):
-    print(a+b)
-soma(1,2)
+    return a+b
+print(soma(2,3))
