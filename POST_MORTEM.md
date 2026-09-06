@@ -1,3 +1,4 @@
+--------------------------------------------------------------------------------------------------Python---------------------------------------------------------------------------------------------------------------
 Comando usado para pedir o código:
 'Gere o código de uma classe Pilha em Python. É proibido usar listas nativas []; o armazenamento interno deve ser obrigatoriamente uma instância do módulo array da biblioteca padrão. Implemente as exceções PilhaCheiaErro, PilhaVaziaErro e TipoErro, e garanta que o método empilha(dado)(empilha um dado no topo da pilha. Se a pilha estiver cheia, deve levantar a exceção “PilhaCheiaErro”. Se o dado não for do tipo básico armazenado pela Pilha, deve levantar a exceção “TipoErro”). 
 Inclua os métodos:
@@ -128,3 +129,28 @@ solução --> utilizar 'self._dados[-1], self._dados[-2] = self._dados[-2], self
 solução --> verificar se len(dado) == 1
 5. _MAPA_TIPOS agora cobre todos os typecodes numéricos (com e sem sinal) num único dicionário, então Pilha('I', 2) e afins funcionam.
 6. __init__ valida tipo_codigo e capacidade na hora, em vez de deixar a pilha nascer quebrada.
+
+Testes de Estresse(feitos pela IA):
+Comando: 'Faz um relatório simples dos testes de estresse executados, demonstrando que o código refatorado supera o código ingênuo gerado inicialmente.'
+Resposta: 
+| # | Cenário | Original | Revisada |
+|---|---|---|---|
+| 1 | Typecode sem sinal (`'I'`) aceita um valor válido (`5`) | **FALHOU** — `TipoErro: ... tipo NoneType` (bug: qualquer valor é rejeitado) | **PASSOU** — empilha normalmente |
+| 2 | `bool` é rejeitado em pilha de inteiros | **FALHOU** — aceita `True` sem exceção | **PASSOU** — `TipoErro` explícito |
+| 3 | String de 2+ caracteres em pilha `'u'` gera erro da própria classe | **FALHOU** — vaza `TypeError` cru do módulo `array` | **PASSOU** — `TipoErro` limpo, antes de tocar o `array` |
+| 4 | Valor fora do intervalo (`300` numa pilha `'b'`) gera erro da própria classe | **FALHOU** — vaza `OverflowError` cru do módulo `array` | **PASSOU** — `TipoErro` limpo |
+| 5 | Capacidade inválida (`0`) é rejeitada na construção | **FALHOU** — constrói pilha que nasce sempre "cheia", sem aviso | **PASSOU** — `ValueError` claro no `__init__` |
+| 6 | `troca()` com menos de 2 elementos usa exceção do próprio contrato da classe | **FALHOU** — levanta `ValueError` genérico (fora do padrão `PilhaCheiaErro`/`PilhaVaziaErro`/`TipoErro`) | **PASSOU** — levanta `PilhaVaziaErro` |
+| 7 | Sequência funcional básica (empilha → troca → desempilha) continua correta | PASSOU | PASSOU |
+**Placar de correção: Original 1/7 · Revisada 7/7.** O único teste que a versão original passa é o de regressão funcional básica — ou seja, a base do algoritmo já estava certa; os problemas estavam todos nas bordas (tipos, validação, contrato de exceções).
+
+## Teste de carga (desempenho)
+600.000 operações no total (300.000 `empilha` + 300.000 `desempilha`) numa pilha de inteiros:
+| Versão | Tempo |
+|---|---|
+| Original | 0,0776 s |
+| Revisada | 0,0948 s |
+| **Overhead** | **+22,1%** |
+## Conclusão
+A versão revisada é estritamente superior em corretude: fecha todas as brechas testadas (tipos sem sinal, `bool`, strings multi-caractere, overflow numérico, capacidade inválida, inconsistência de exceções) sem alterar o comportamento correto já existente (teste 7). O custo é um overhead de desempenho de ~22% no teste de carga, decorrente das validações extras (checagem de `bool`, checagem de tamanho para `'u'`, `try/except` em cada `empilha`). Em termos absolutos isso ainda é ínfimo (0,09 s para 600 mil operações), então a troca de ~0,02 s de desempenho por eliminar 6 falhas de robustez é favorável para este caso de uso.
+-------------------------------------------------------------------------------------------------- C++ ----------------------------------------------------------------------------------------------------------------
