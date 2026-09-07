@@ -118,7 +118,7 @@ if __name__ == "__main__":
     except TipoErro as e:
         print(e)
 
-Erros e ineficiências da IA e Refatoração:
+Code Review: Erros e ineficiências da IA e Refatoração:
 1. A IA usava apenas isinstance(dado, int). Em Python, a classe bool é uma subclasse de int. Se você tentasse empilhar True numa pilha de inteiros, o código bruto aceitaria, tratando como 1.
 solução --> adicionar 'and not isinstance(dado, bool)'
 2. O módulo array do Python mapeia os dados diretamente para tipos primitivos do C (como unsigned int). Se você tentar colocar um número muito grande num array de bytes ('b'), o Python estoura um OverflowError. A IA não tratava isso.
@@ -278,3 +278,35 @@ int main() {
 
     return 0;
 }
+
+Code Review: Erros e ineficiências da IA e Refatoração:
+1. Prevenção de Corrupção de Memória (Regra dos 5): A IA gerou apenas um construtor e um destrutor simples. Se o usuário fizesse uma cópia da pilha (Pilha p2 = p1), o C++ faria uma cópia rasa (shallow copy), fazendo com que ambos os objetos apontassem para o mesmo array na memória física. Ao final da execução, o destrutor tentaria liberar o mesmo bloco de memória duas vezes (double-free), causando o travamento do sistema.
+2. Solução (Alocação Dinâmica): Foram implementados construtores de cópia profunda e operadores de semântica de movimento. Isso garante a manipulação segura de ponteiros e alocação dinâmica, criando arrays independentes ou transferindo a posse da memória sem gerar vazamentos.
+3. Otimização por Indireção no método troca(): A IA removia e reinseria itens desnecessariamente, o que gerava chamadas de sub-rotinas extras na pilha de execução do sistema.
+4. Solução (In-place): A refatoração utilizou std::swap com acesso direto aos índices do ponteiro _dados. Isso modifica os dados originais no local (in-place), eliminando a latência de cópia e resolvendo a inversão com complexidade de tempo constante O(1).
+5. Segurança de Tipagem em Templates: O código bruto permitia que o usuário burlasse a checagem de tipos forçando a declaração do template (ex: empilha<int>(3.14) truncaria o float silenciosamente).
+6. Solução (Typeid estrito): O uso do template foi restrito internamente, exigindo chamadas implícitas (empilha(3.14)) para que o typeid compare o tipo real do dado passado com o tipo base da pilha, levantando o TipoErro corretamente. 
+
+Testes de estresse(feitos pela IA):
+Comando: 'Faz um relatório simples dos testes de estresse executados, demonstrando que o código refatorado por você supera o código ingênuo gerado inicialmente.'
+Resposta:
+| # | Cenário | Original | Revisada |
+|---|---|---|---|
+| 1 | Copiar uma pilha (`Pilha p2 = p1;`) não corrompe/derruba o programa | **FALHOU** — `free(): double free detected in tcache 2`, processo aborta (exit code 134). Antes de abortar, `p1.desempilha()` já retorna um valor corrompido (`5` em vez do `20` esperado) | **PASSOU** — exit code 0; `p2` e `p1` são independentes, `p1.desempilha()` retorna `20` corretamente |
+| 2 | Capacidade negativa (`-5`) gera erro claro da própria classe | **PARCIAL** — vaza `std::bad_array_new_length` (exceção genérica do C++, fora do vocabulário da classe) | **PASSOU** — `std::invalid_argument("Capacidade deve ser um inteiro positivo.")` |
+| 3 | Capacidade zero não deixa a pilha num estado contraditório | **FALHOU** — `pilha_esta_cheia()` e `pilha_esta_vazia()` retornam `true` ao mesmo tempo | **PASSOU** — rejeitada na construção com a mesma exceção do teste 2 |
+| 4 | Pilha cheia **e** tipo errado ao mesmo tempo: qual exceção é lançada | `TipoErro` (checa tipo antes de cheia) | `PilhaCheiaErro` (checa cheia antes de tipo) — comportamento alterado por decisão de design (ordem de checagem), não é a correção de um bug |
+| 5 | Métodos de consulta (`tamanho()` etc.) chamáveis numa `const Pilha&` | **FALHOU** — nem compila: `error: passing 'const original::Pilha' as 'this' argument discards qualifiers` | **PASSOU** — compila normalmente (métodos marcados `const`) |
+| 6 | Sequência funcional básica (`empilha`/`troca`/`desempilha`) permanece correta | PASSOU | PASSOU |
+Nos 4 cenários que expõem uma diferença real de robustez (1, 2, 3 e 5), a revisada passa nos 4; a original falha ou tem comportamento parcial nos 4.** O cenário 4 é uma mudança de comportamento intencional (não uma correção), e o 6 confirma que nenhuma lógica correta foi quebrada no processo.
+
+## Desempenho
+Medido com `-O2`, três execuções por cenário (para checar variância):
+| Cenário | Original | Revisada |
+|---|---|---|
+| 5.000.000 `empilha` + 5.000.000 `desempilha` | ~23–26 ms | ~21–22 ms |
+| 5.000.000 chamadas de `troca()` | ~10,3–10,9 ms | ~10,4–10,9 ms |
+No teste de push/pop, a revisada ficou consistentemente um pouco mais rápida (diferença pequena, possivelmente dentro da margem de ruído de medição, mas repetida nas três rodadas). No teste de `troca()`, apesar de termos trocado dois `pop`+`push` por um `std::swap` direto, o `-O2` aparentemente já otimiza os dois padrões para código equivalente — a diferença entre as versões ficou dentro do ruído, sem vencedor claro. Diferente da versão Python (onde a correção custou ~22% de overhead), em C++ a versão revisada não paga preço de desempenho pela robustez extra.
+
+## Conclusão
+A versão revisada elimina um bug de corrupção de memória real e reproduzível (double free / use-after-free por cópia rasa), fecha uma lacuna de validação na construção, e melhora a interface (`const`-correctness) — tudo isso sem custo de desempenho mensurável. A original só "ganha" no teste 6 (a lógica de pilha em si já estava certa), que é justamente a base que a revisão preservou intacta.
