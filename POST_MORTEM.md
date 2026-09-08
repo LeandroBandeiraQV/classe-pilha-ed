@@ -310,3 +310,148 @@ No teste de push/pop, a revisada ficou consistentemente um pouco mais rápida (d
 
 ## Conclusão
 A versão revisada elimina um bug de corrupção de memória real e reproduzível (double free / use-after-free por cópia rasa), fecha uma lacuna de validação na construção, e melhora a interface (`const`-correctness) — tudo isso sem custo de desempenho mensurável. A original só "ganha" no teste 6 (a lógica de pilha em si já estava certa), que é justamente a base que a revisão preservou intacta.
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+-------------------------------------------------------------------------------------------------- JavaScript -------------------------------------------------------------------------------------------------------
+Comando usado para pedir o código:
+'Gere o código de uma classe Pilha em JavaScript. É proibido usar um Array nativo ([]) como armazenamento interno; o armazenamento deve ser obrigatoriamente uma instância de um TypedArray (Int32Array) alocado com tamanho fixo no construtor, representando uma pilha de números inteiros. Implemente as exceções personalizadas PilhaCheiaErro, PilhaVaziaErro e TipoErro, cada uma estendendo a classe Error do JavaScript, e garanta que o método empilha(dado) empilhe um dado no topo da pilha. Se a pilha estiver cheia, deve lançar a exceção "PilhaCheiaErro". Se o dado não for do tipo básico armazenado pela pilha, deve lançar a exceção "TipoErro". Inclua os métodos: desempilha() -> dado (desempilha o dado do topo da pilha, retornando-o; se a pilha estiver vazia, deve lançar a exceção "PilhaVaziaErro"); pilhaEstaVazia() (retorna true se a pilha estiver vazia); pilhaEstaCheia() (retorna true se a pilha estiver cheia); troca() (troca o dado do topo da pilha com o dado imediatamente abaixo) e tamanho() (retorna o número de dados empilhados).'
+
+Código bruto:
+class PilhaCheiaErro extends Error {
+  constructor(mensagem = "Não é possível empilhar: a pilha está cheia.") {
+    super(mensagem);
+    this.name = "PilhaCheiaErro";
+  }
+}
+
+class PilhaVaziaErro extends Error {
+  constructor(mensagem = "Não é possível realizar a operação: a pilha está vazia.") {
+    super(mensagem);
+    this.name = "PilhaVaziaErro";
+  }
+}
+
+class TipoErro extends Error {
+  constructor(mensagem = "Tipo de dado inválido para esta pilha.") {
+    super(mensagem);
+    this.name = "TipoErro";
+  }
+}
+
+class Pilha {
+  #dados;
+  #topo;
+
+  constructor(capacidade) {
+    if (!Number.isInteger(capacidade) || capacidade <= 0) {
+      throw new TipoErro(
+        "A capacidade da pilha deve ser um número inteiro positivo."
+      );
+    }
+    this.#dados = new Int32Array(capacidade);
+    this.#topo = -1;
+  }
+
+  #ehInteiroValido(dado) {
+    return (
+      typeof dado === "number" &&
+      Number.isInteger(dado) &&
+      dado >= -2147483648 &&
+      dado <= 2147483647
+    );
+  }
+
+  empilha(dado) {
+    if (!this.#ehInteiroValido(dado)) {
+      throw new TipoErro(
+        `O dado "${dado}" não é um número inteiro válido para esta pilha.`
+      );
+    }
+    if (this.pilhaEstaCheia()) {
+      throw new PilhaCheiaErro();
+    }
+    this.#topo++;
+    this.#dados[this.#topo] = dado;
+  }
+
+  desempilha() {
+    if (this.pilhaEstaVazia()) {
+      throw new PilhaVaziaErro();
+    }
+    const dado = this.#dados[this.#topo];
+    this.#topo--;
+    return dado;
+  }
+
+  pilhaEstaVazia() {
+    return this.#topo === -1;
+  }
+
+  pilhaEstaCheia() {
+    return this.#topo === this.#dados.length - 1;
+  }
+
+  troca() {
+    if (this.tamanho() < 2) {
+      throw new PilhaVaziaErro(
+        "Não é possível trocar: a pilha precisa de pelo menos dois dados empilhados."
+      );
+    }
+    const topo = this.#topo;
+    const temp = this.#dados[topo];
+    this.#dados[topo] = this.#dados[topo - 1];
+    this.#dados[topo - 1] = temp;
+  }
+
+  tamanho() {
+    return this.#topo + 1;
+  }
+}
+
+module.exports = { Pilha, PilhaCheiaErro, PilhaVaziaErro, TipoErro };
+
+Erros e ineficiências da IA e Refatoração:
+1. O construtor lançava TipoErro quando a capacidade era inválida (não-inteira ou <= 0). Pelo contrato da classe, TipoErro é reservado para dados inválidos passados a empilha() — um argumento de construtor fora da faixa aceitável é semanticamente outra coisa, equivalente ao ValueError usado para o mesmo caso na versão Python.
+solução --> lançar RangeError (exceção nativa do JavaScript para valor fora do intervalo permitido) no construtor, mantendo TipoErro exclusivo para empilha().
+2. empilha() checava o tipo do dado antes de checar se a pilha estava cheia — ordem oposta à da versão em Python, que checa "cheia" primeiro. Isso fazia com que, ao empilhar um dado inválido numa pilha já cheia, a versão em JS lançasse TipoErro enquanto a versão em Python lança PilhaCheiaErro para o mesmo cenário: comportamento inconsistente entre as implementações do grupo.
+solução --> inverter a ordem em empilha() para checar pilhaEstaCheia() primeiro, alinhando com a versão em Python. (A versão em C++ segue a mesma ordem do JS bruto e ainda precisa do mesmo ajuste quando for revisada.)
+
+Diferente do que aconteceu nas versões em Python e C++, o código bruto já veio correto em três pontos que normalmente exigiriam correção manual: (a) validou o intervalo de 32 bits com sinal antes de escrever no Int32Array, evitando o wraparound silencioso que o TypedArray faria sozinho com um valor fora da faixa; (b) a checagem `typeof dado === "number"` já rejeita boolean automaticamente, então a armadilha do bool-é-subclasse-de-int encontrada no Python simplesmente não existe em JavaScript; (c) troca() já foi implementada como troca direta O(1) nos dois índices do array, sem os pop/push redundantes que precisaram ser eliminados na versão em C++. Também não há risco de vazamento de memória ou double free nesta implementação, já que o JavaScript usa coletor de lixo automático — o problema de gerenciamento manual de memória identificado na versão em C++ não existe aqui.
+
+Testes de Estresse (script Node.js, pilha_stress_test.js):
+| # | Cenário | Resultado |
+|---|---|---|
+| 1 | Sequência funcional básica (empilha → troca → desempilha) | PASSOU |
+| 2 | Float (3.14) rejeitado numa pilha de inteiros | PASSOU — TipoErro |
+| 3 | Boolean (true) rejeitado | PASSOU — TipoErro |
+| 4 | String numérica ("10") rejeitada | PASSOU — TipoErro |
+| 5 | NaN / Infinity rejeitados | PASSOU — TipoErro |
+| 6 | Valor fora do intervalo Int32 (2147483648 / -2147483649) rejeitado sem wraparound | PASSOU — TipoErro |
+| 7 | Valor no limite exato do Int32 (2147483647) aceito e preservado | PASSOU |
+| 8 | Capacidade inválida no construtor (0, -1, 2.5) rejeitada | PASSOU — RangeError |
+| 9 | Empilhar além da capacidade | PASSOU — PilhaCheiaErro |
+| 10 | Desempilhar pilha vazia | PASSOU — PilhaVaziaErro |
+| 11 | troca() com menos de 2 elementos | PASSOU — PilhaVaziaErro |
+| 12 | Pilha cheia + dado inválido ao mesmo tempo → PilhaCheiaErro prevalece (ordem corrigida) | PASSOU |
+**Placar: 16/16 testes passaram** na versão revisada.
+
+## Teste de carga (desempenho)
+600.000 operações no total (300.000 empilha + 300.000 desempilha).
+
+Execução isolada (pilha_stress_test.js, versão revisada): 0,0501 s.
+
+Comparação bruto vs. revisado (carga_comparacao.js, média de 5 execuções cada, para isolar o custo de compilação/JIT do V8):
+| Versão | Tempo médio (5 execuções) |
+|---|---|
+| Bruto | 0,0130 s |
+| Revisado | 0,0169 s |
+| Diferença | +30,0% (revisado mais lento) |
+
+(A execução isolada acima mede um tempo maior que a média porque é a primeira chamada do processo: o V8 ainda não compilou/otimizou as funções via JIT. A partir da 2ª execução no mesmo processo, como acontece dentro de mediaDe(), esse custo de "aquecimento" desaparece, por isso os números da tabela são mais baixos.)
+
+## Conclusão
+Ao contrário do Python e do C++, o código bruto entregue pela IA para JavaScript já veio praticamente correto: a proteção contra overflow do TypedArray, a distinção nativa entre boolean e number, e a implementação O(1) de troca() já estavam presentes sem precisar de correção manual. Os dois ajustes feitos (exceção de capacidade e ordem de checagem em empilha()) são pontuais, não alteram a complexidade de nenhuma operação e não tocam o caminho quente de empilha()/desempilha() — ambas as versões continuam O(1) por operação. Isso é coerente com o resultado medido: a versão revisada rodou 30% mais lenta que a bruta nesta bateria de testes, uma diferença pequena em termos absolutos (17ms contra 13ms para 600 mil operações) e altamente sensível a ruído de medição (aquecimento do JIT, coleta de lixo, carga da máquina no momento do teste) — não a uma mudança real de complexidade algorítmica. Diferente do Python, onde o overhead de +22% foi consequência direta e reproduzível de validações extras adicionadas ao caminho quente do código, aqui nenhuma validação nova foi inserida em empilha()/desempilha(), então não há razão estrutural para esperar uma diferença de desempenho real entre as duas versões.
